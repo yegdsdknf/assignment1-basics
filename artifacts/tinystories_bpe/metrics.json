@@ -1,0 +1,10 @@
+{
+  "elapsed_seconds": 91.59517681600119,
+  "vocab_size": 10000,
+  "num_merges": 9743,
+  "longest_token_id": 7160,
+  "longest_token_num_bytes": 15,
+  "longest_token_hex": "206163636f6d706c6973686d656e74",
+  "longest_token_repr": "b' accomplishment'",
+  "longest_token_text": " accomplishment"
+}

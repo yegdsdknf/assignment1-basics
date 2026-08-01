@@ -45,6 +45,16 @@ UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe4 in position 0: unexpect
 3. Give a two-byte sequence that does not decode to any Unicode character(s).
     - b"\xC0\x80",用两个字节表示一个本来一个字节就能表示的字符
 
+# Problem (train_bpe_tinystories): BPE Training on TinyStories (2 points)
+
+## (a) Training results
+
+使用完整 TinyStories 训练集、10,000 的最大词表大小、<|endoftext|> 特殊 token，以及 12 workers + 64 chunks 进行训练，墙钟时间为 91.78 秒，GNU time 报告的最大常驻内存为 194,176 KiB（约 189.6 MiB）。最长 token 是 15 字节的 b' accomplishment'；这是合理的，因为该词在 TinyStories 中较常见，并且 GPT-2 预分词会保留单词前的空格。
+
+## (b) Profiling results
+
+预分词是最耗时的阶段，独立测量约为 61.71 秒，占完整训练时间的约 67.2%；完整任务的平均 CPU 利用率为 790%，说明并行预分词有效，而串行 BPE merge 阶段限制了总体并行度。
+
 # 学习经验：2.23GB TinyStories 并行预分词的 OOM 排查
 
 ## 1. 现象与证据
