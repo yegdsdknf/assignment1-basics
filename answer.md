@@ -55,6 +55,33 @@ UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe4 in position 0: unexpect
 
 预分词是最耗时的阶段，独立测量约为 61.71 秒，占完整训练时间的约 67.2%；完整任务的平均 CPU 利用率为 790%，说明并行预分词有效，而串行 BPE merge 阶段限制了总体并行度。
 
+# Problem (tokenizer_experiments): Experiments with tokenizers (4 points)
+
+## (a) TinyStories compression ratio
+
+使用固定随机种子 42，从 TinyStories validation 中随机抽取 10 篇文档，并在每篇文档末尾保留 `<|endoftext|>`。样本共包含 9,080 个 UTF-8 字节，编码后得到 2,214 个 token，因此 10K TinyStories Tokenizer 的压缩率为：
+
+```text
+9080 bytes / 2214 tokens = 4.1012 bytes/token
+```
+
+即每个 token 平均表示约 4.10 个原始 UTF-8 字节。
+
+## (c) Tokenizer throughput and Pile estimate
+
+在当前单进程 Python 实现上，仅测量 `encode()` 的编码时间，不包括加载 Tokenizer、读取语料和磁盘 I/O。预热后对上述样本重复编码 361 次，共耗时 2.0046 秒，测得吞吐量约为 1,635,184 bytes/s（1.635 MB/s）。
+
+按 Pile 大小为十进制 825GB，即 `825 × 10^9` bytes 估算：
+
+```text
+825,000,000,000 bytes / 1,635,183.63 bytes/s
+= 504,530.49 seconds
+= 140.15 hours
+= 5.84 days
+```
+
+因此，假设吞吐量保持不变且忽略磁盘 I/O，当前实现编码完整 Pile 预计需要约 140.15 小时，即 5.84 天。
+
 # 学习经验：2.23GB TinyStories 并行预分词的 OOM 排查
 
 ## 1. 现象与证据
