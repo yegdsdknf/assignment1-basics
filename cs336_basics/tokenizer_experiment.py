@@ -9,10 +9,8 @@ from pathlib import Path
 END_OF_TEXT = "<|endoftext|>"
 PILE_NUM_BYTES = 825 * 1_000_000_000
 
-def iter_documents(
-        input_path: Path,
-        chunk_size: int = 1024*1024
-) -> Iterator[str]:
+
+def iter_documents(input_path: Path, chunk_size: int = 1024 * 1024) -> Iterator[str]:
     """流式读取由特殊 token 分隔的文档。"""
     buffer = ""
 
@@ -31,30 +29,27 @@ def iter_documents(
     if buffer:
         yield buffer
 
-def sample_documents(
-        documents: Iterable[str],
-        sample_size: int,
-        seed: int = 42
-) -> list[str]:
-    rng = random.Random(seed)   #创建了一个独立的随机数生成器,不会影响程序其他地方的随机操作
+
+def sample_documents(documents: Iterable[str], sample_size: int, seed: int = 42) -> list[str]:
+    rng = random.Random(seed)  # 创建了一个独立的随机数生成器,不会影响程序其他地方的随机操作
     samples: list[str] = []
 
     for document_count, document in enumerate(documents, start=1):
         if len(samples) < sample_size:
             samples.append(document)
             continue
-        #放满要求数量后，再随机替换
+        # 放满要求数量后，再随机替换
         replacement_index = rng.randrange(document_count)
 
         if replacement_index < sample_size:
             samples[replacement_index] = document
 
     if len(samples) < sample_size:
-        raise ValueError(
-            f"语料只有 {len(samples)} 个文档，无法抽取 {sample_size} 个"
-        )
+        raise ValueError(f"语料只有 {len(samples)} 个文档，无法抽取 {sample_size} 个")
 
     return samples
+
+
 """
 为什么不直接使用 random.sample()？如果文档已经全部放在列表中，可以直接写：
 random.sample(documents, sample_size)
@@ -67,15 +62,13 @@ all_documents = list(iter_documents(input_path))
 蓄水池抽样只需要保存：sample_size 篇文档,而不需要保存全部文档。
 """
 
+
 def calculate_compression_ratio(
-        tokenizer: Tokenizer,
-        documents: list[str],
+    tokenizer: Tokenizer,
+    documents: list[str],
 ) -> tuple[int, int, float]:
     # 保留文档边界，使实验更接近真正的数据编码过程。
-    text = "".join(
-        document + END_OF_TEXT
-        for document in documents
-    )
+    text = "".join(document + END_OF_TEXT for document in documents)
 
     num_bytes = len(text.encode("utf-8"))
     token_ids = tokenizer.encode(text)
@@ -98,15 +91,12 @@ def calculate_compression_ratio(
 JSON 写入。
 为了降低偶然误差，应先预热，然后持续测量至少约2秒：
 """
+
+
 def benchmark_tokenizer(
-        tokenizer: Tokenizer,
-        documents: list[str],
-        minimum_seconds: float=2.0
+    tokenizer: Tokenizer, documents: list[str], minimum_seconds: float = 2.0
 ) -> tuple[int, float, float]:
-    text = "".join(
-        document + END_OF_TEXT
-        for document in documents
-    )
+    text = "".join(document + END_OF_TEXT for document in documents)
     num_bytes = len(text.encode("utf-8"))
 
     # 预热，避免首次调用开销影响结果。
@@ -115,7 +105,7 @@ def benchmark_tokenizer(
 
     processed_bytes = 0
     num_iterations = 0
-    start_time = time.perf_counter()    #适合性能测试的高精度计时器。
+    start_time = time.perf_counter()  # 适合性能测试的高精度计时器。
 
     while True:
         # 不保存所有结果，避免测试本身不断占用内存。
@@ -133,11 +123,14 @@ def benchmark_tokenizer(
 
     return num_iterations, elapsed_seconds, bytes_per_second
 
+
 """
 估算处理 Pile 的时间 Pile 大约是 825GB
 """
+
+
 def estimate_pile_time(
-        bytes_per_second: float,
+    bytes_per_second: float,
 ) -> tuple[float, float, float]:
     seconds = PILE_NUM_BYTES / bytes_per_second
     hours = seconds / 3600
@@ -148,40 +141,28 @@ def estimate_pile_time(
 
 def main() -> None:
     tokenizer = Tokenizer.from_files(
-        vocab_filepath=Path(
-            "artifacts/tinystories_bpe/vocab.json"
-        ),
-        merges_filepath=Path(
-            "artifacts/tinystories_bpe/merges.json"
-        ),
+        vocab_filepath=Path("artifacts/tinystories_bpe/vocab.json"),
+        merges_filepath=Path("artifacts/tinystories_bpe/merges.json"),
         special_tokens=[END_OF_TEXT],
     )
 
     documents = sample_documents(
-        documents=iter_documents(
-            Path("data/TinyStoriesV2-GPT4-train.txt")
-        ),
+        documents=iter_documents(Path("data/TinyStoriesV2-GPT4-train.txt")),
         sample_size=10,
         seed=42,
     )
 
-    num_bytes, num_tokens, bytes_per_token = (
-        calculate_compression_ratio(
-            tokenizer=tokenizer,
-            documents=documents,
-        )
+    num_bytes, num_tokens, bytes_per_token = calculate_compression_ratio(
+        tokenizer=tokenizer,
+        documents=documents,
     )
 
-    iterations, elapsed_seconds, bytes_per_second = (
-        benchmark_tokenizer(
-            tokenizer=tokenizer,
-            documents=documents,
-        )
+    iterations, elapsed_seconds, bytes_per_second = benchmark_tokenizer(
+        tokenizer=tokenizer,
+        documents=documents,
     )
 
-    pile_seconds, pile_hours, pile_days = estimate_pile_time(
-        bytes_per_second
-    )
+    pile_seconds, pile_hours, pile_days = estimate_pile_time(bytes_per_second)
 
     metrics = {
         "sample_size": len(documents),
