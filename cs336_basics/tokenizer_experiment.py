@@ -4,7 +4,6 @@ import random
 from cs336_basics.tokenizer import Tokenizer
 import time
 import json
-from pathlib import Path
 
 END_OF_TEXT = "<|endoftext|>"
 PILE_NUM_BYTES = 825 * 1_000_000_000
