@@ -1,0 +1,22 @@
+uv run python -m cs336_basics.train \
+  --train-data data/tinystories_train.uint16.bin \
+  --validation-data data/tinystories_valid.uint16.bin \
+  --checkpoint-dir artifacts/tinystories_checkpoints \
+  --log-file artifacts/tinystories_metrics.jsonl \
+  --vocab-size 10000 \
+  --context-length 256 \
+  --d-model 512 \
+  --num-layers 4 \
+  --num-heads 16 \
+  --d-ff 1344 \
+  --rope-theta 10000 \
+  --batch-size 32 \
+  --max-iters 5000 \
+  --warmup-iters 100 \
+  --max-learning-rate 3e-4 \
+  --min-learning-rate 3e-5 \
+  --beta1 0.9 \
+  --beta2 0.95 \
+  --weight-decay 0.1 \
+  --max-grad-norm 1.0 \
+  --device cuda

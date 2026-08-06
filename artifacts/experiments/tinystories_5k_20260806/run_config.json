@@ -1,0 +1,46 @@
+{
+  "experiment_name": "tinystories_5k_20260806",
+  "dataset": {
+    "train": "data/tinystories_train.uint16.bin",
+    "validation": "data/tinystories_valid.uint16.bin",
+    "tokenizer_vocab": "artifacts/tinystories_bpe/vocab.json",
+    "tokenizer_merges": "artifacts/tinystories_bpe/merges.json",
+    "vocab_size": 10000
+  },
+  "model": {
+    "context_length": 256,
+    "d_model": 512,
+    "num_layers": 4,
+    "num_heads": 16,
+    "d_ff": 1344,
+    "rope_theta": 10000
+  },
+  "optimizer": {
+    "name": "AdamW",
+    "max_learning_rate": 0.0003,
+    "min_learning_rate": 0.00003,
+    "warmup_iters": 100,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "eps": 1e-8,
+    "weight_decay": 0.1,
+    "max_grad_norm": 1.0
+  },
+  "training": {
+    "batch_size": 32,
+    "max_iters": 5000,
+    "tokens_per_step": 8192,
+    "total_tokens": 40960000,
+    "eval_interval": 100,
+    "eval_batches": 20,
+    "checkpoint_interval": 500,
+    "seed": 42
+  },
+  "result": {
+    "step": 5000,
+    "elapsed_seconds": 966.3285163580003,
+    "train_loss": 1.8605457305908204,
+    "validation_loss": 1.8685670852661134,
+    "perplexity": 6.4790058816278115
+  }
+}

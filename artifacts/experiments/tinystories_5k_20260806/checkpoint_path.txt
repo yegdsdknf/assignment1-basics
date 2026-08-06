@@ -1,0 +1,1 @@
+artifacts/tinystories_checkpoints/step_0005000.pt

@@ -168,3 +168,10 @@ cython_debug/
 # Downloaded corpora and local performance measurements
 data/
 test_pretoken/
+
+# Local training outputs. Keep small experiment manifests under
+# artifacts/experiments/ version-controlled, but never commit checkpoints.
+artifacts/checkpoints/
+artifacts/*_checkpoints/
+artifacts/*_metrics.jsonl
+artifacts/**/*.pt
