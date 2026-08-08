@@ -1,7 +1,6 @@
 import argparse
 import json
 import math
-import random
 import time
 from pathlib import Path
 from typing import Any
@@ -13,7 +12,8 @@ from cs336_basics.data import get_batch
 from cs336_basics.model import TransformerLM
 from cs336_basics.nn_utils import cross_entropy, gradient_clipping
 from cs336_basics.optimizer import AdamW, get_lr_cosine_schedule
-from cs336_basics.serialization import load_checkpoint, save_checkpoint
+from cs336_basics.runtime import resolve_device, set_random_seed, synchronize_device
+from cs336_basics.serialization import save_checkpoint
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,7 +24,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validation-data", type=Path, required=True)
     parser.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
     parser.add_argument("--log-file", type=Path, default=Path("artifacts/training_metrics.jsonl"))
-    parser.add_argument("--resume", type=Path, default=None)
 
     # 模型超参数
     parser.add_argument("--vocab-size", type=int, default=10_000)
@@ -57,7 +56,7 @@ def parse_args() -> argparse.Namespace:
         "--device",
         type=str,
         default="auto",
-        help="auto、cpu、cuda、cuda:0 或 mps",
+        help="auto、cpu、cuda 或 cuda:0",
     )
     parser.add_argument("--seed", type=int, default=42)
 
@@ -88,36 +87,6 @@ def validate_args(args: argparse.Namespace) -> None:
 
     if args.d_model % args.num_heads != 0:
         raise ValueError("d_model 必须能被 num_heads 整除")
-
-
-def resolve_device(device_name: str) -> torch.device:
-    if device_name != "auto":
-        return torch.device(device_name)
-
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return torch.device("mps")
-
-    return torch.device("cpu")
-
-
-def set_random_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-def synchronize_device(device: torch.device) -> None:
-    """让计时包含设备上尚未结束的异步计算。"""
-    if device.type == "cuda":
-        torch.cuda.synchronize(device)
-    elif device.type == "mps" and hasattr(torch, "mps"):
-        torch.mps.synchronize()
 
 
 def load_memmap(path: Path, context_length: int) -> np.memmap:
@@ -255,26 +224,6 @@ def main() -> None:
         weight_decay=args.weight_decay,
     )
 
-    start_iteration = 0
-
-    if args.resume is not None:
-        if not args.resume.is_file():
-            raise FileNotFoundError(f"找不到 checkpoint：{args.resume}")
-
-        start_iteration = load_checkpoint(
-            src=args.resume,
-            model=model,
-            optimizer=optimizer,
-        )
-
-        print(
-            f"从 iteration={start_iteration} 恢复训练",
-            flush=True,
-        )
-
-    if start_iteration > args.max_iters:
-        raise ValueError("checkpoint 的 iteration 已超过 max_iters")
-
     num_parameters = sum(parameter.numel() for parameter in model.parameters())
 
     print(
@@ -284,7 +233,6 @@ def main() -> None:
                 "num_parameters": num_parameters,
                 "train_tokens": len(train_data),
                 "validation_tokens": len(validation_data),
-                "start_iteration": start_iteration,
                 "max_iters": args.max_iters,
             },
             indent=2,
@@ -318,10 +266,7 @@ def main() -> None:
     synchronize_device(device)
     training_start_time = time.perf_counter()
 
-    for iteration in range(
-        start_iteration,
-        args.max_iters,
-    ):
+    for iteration in range(args.max_iters):
         learning_rate = get_lr_cosine_schedule(
             it=iteration,
             max_learning_rate=args.max_learning_rate,
@@ -369,8 +314,7 @@ def main() -> None:
 
             latest_train_loss = running_loss.item() / running_steps
 
-            session_steps = completed_steps - start_iteration
-            session_tokens = session_steps * args.batch_size * args.context_length
+            processed_tokens = completed_steps * args.batch_size * args.context_length
 
             write_log(
                 args.log_file,
@@ -378,8 +322,8 @@ def main() -> None:
                     "event": "train",
                     "step": completed_steps,
                     "elapsed_seconds": elapsed_seconds,
-                    "tokens_processed": (completed_steps * args.batch_size * args.context_length),
-                    "session_tokens_per_second": (session_tokens / elapsed_seconds),
+                    "tokens_processed": processed_tokens,
+                    "session_tokens_per_second": processed_tokens / elapsed_seconds,
                     "learning_rate": learning_rate,
                     "train_loss": latest_train_loss,
                 },
@@ -401,8 +345,7 @@ def main() -> None:
                 seed=args.seed + 1,
             )
 
-            # 防止极端异常 loss 让 exp 溢出。
-            perplexity = math.exp(min(validation_loss, 20.0))
+            perplexity = math.exp(validation_loss)
 
             synchronize_device(device)
             elapsed_seconds = time.perf_counter() - training_start_time

@@ -1,32 +1,14 @@
-from collections.abc import Iterator, Iterable
-from pathlib import Path
-import random
-from cs336_basics.tokenizer import Tokenizer
-import time
 import json
+import random
+import time
+from collections.abc import Iterable
+from pathlib import Path
+
+from cs336_basics.prepare_data import iter_documents
+from cs336_basics.tokenizer import Tokenizer
 
 END_OF_TEXT = "<|endoftext|>"
 PILE_NUM_BYTES = 825 * 1_000_000_000
-
-
-def iter_documents(input_path: Path, chunk_size: int = 1024 * 1024) -> Iterator[str]:
-    """流式读取由特殊 token 分隔的文档。"""
-    buffer = ""
-
-    with input_path.open(encoding="utf-8") as file:
-        while chunk := file.read(chunk_size):
-            buffer += chunk
-            fragments = buffer.split(END_OF_TEXT)
-
-            # 最后一个片段可能是不完整文档，留到下一轮。
-            for document in fragments[:-1]:
-                if document:
-                    yield document
-
-            buffer = fragments[-1]
-
-    if buffer:
-        yield buffer
 
 
 def sample_documents(documents: Iterable[str], sample_size: int, seed: int = 42) -> list[str]:
@@ -49,19 +31,6 @@ def sample_documents(documents: Iterable[str], sample_size: int, seed: int = 42)
     return samples
 
 
-"""
-为什么不直接使用 random.sample()？如果文档已经全部放在列表中，可以直接写：
-random.sample(documents, sample_size)
-
-但这里的 documents 可能是：iter_documents(input_path)
-它是一个流式生成器。
-如果先转成列表：
-all_documents = list(iter_documents(input_path))
-就会把所有文档装进内存。假设语料库有几百万篇文档，这可能占用大量内存。
-蓄水池抽样只需要保存：sample_size 篇文档,而不需要保存全部文档。
-"""
-
-
 def calculate_compression_ratio(
     tokenizer: Tokenizer,
     documents: list[str],
@@ -79,17 +48,6 @@ def calculate_compression_ratio(
     bytes_per_token = num_bytes / num_tokens
 
     return num_bytes, num_tokens, bytes_per_token
-
-
-"""
-测量吞吐量
-只测量编码过程，不把以下时间包括进去：
-加载词表；
-读取文件；
-随机抽样；
-JSON 写入。
-为了降低偶然误差，应先预热，然后持续测量至少约2秒：
-"""
 
 
 def benchmark_tokenizer(
@@ -121,11 +79,6 @@ def benchmark_tokenizer(
     bytes_per_second = processed_bytes / elapsed_seconds
 
     return num_iterations, elapsed_seconds, bytes_per_second
-
-
-"""
-估算处理 Pile 的时间 Pile 大约是 825GB
-"""
 
 
 def estimate_pile_time(

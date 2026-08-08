@@ -17,6 +17,7 @@ type WordSymbols = list[PreToken]
 type WordFrequencies = list[int]  # 将pretoken_counts 转换为两个列表，便于多进程处理
 
 PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
+END_OF_TEXT = "<|endoftext|>"
 
 
 def find_chunk_boundaries(
@@ -120,21 +121,6 @@ def count_pretokens(
     )
 
     return counts
-
-
-def count_pairs(  # 增量算法的全量实现（参考）
-    pretoken_counts: dict[tuple[bytes, ...], int],
-) -> Counter[tuple[bytes, bytes]]:
-    """统计所有 pre-token 内相邻 token 对的加权频率。"""
-
-    pair_counts: Counter[tuple[bytes, bytes]] = Counter()
-
-    for symbols, frequency in pretoken_counts.items():
-        # zip 生成所有相邻元素对
-        for left, right in zip(symbols, symbols[1:]):
-            pair_counts[(left, right)] += frequency
-
-    return pair_counts
 
 
 # 将 Counter 转为固定 word ID
@@ -299,11 +285,7 @@ def count_pretokens_chunk(
         file.seek(start)
         chunk_bytes = file.read(end - start)
 
-    chunk_text = chunk_bytes.decode(
-        "utf-8",
-        errors="ignore",
-    )
-    del chunk_bytes
+    chunk_text = chunk_bytes.decode("utf-8")
 
     return count_pretokens(
         chunk_text,
@@ -321,13 +303,13 @@ def count_pretokens_parallel(
     if num_workers <= 0:
         raise ValueError("num_workers 必须为正数")
 
-    if not special_tokens:
-        raise ValueError("并行分块需要特殊 token 作为安全边界")
+    if special_tokens != [END_OF_TEXT]:
+        raise ValueError(f"并行分块只支持单一文档边界 {END_OF_TEXT!r}")
 
     if num_chunks is None:
         num_chunks = num_workers * 2
 
-    split_token = b"<|endoftext|>"
+    split_token = END_OF_TEXT.encode("utf-8")
     with open(input_path, "rb") as file:  # 生成 chunk 任务
         boundaries = find_chunk_boundaries(
             file=file,
@@ -432,5 +414,3 @@ def train_bpe(
         vocab[len(vocab)] = best_pair[0] + best_pair[1]
 
     return vocab, merges
-
-
