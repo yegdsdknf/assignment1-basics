@@ -350,7 +350,7 @@ class CausalMultiHeadSelfAttention(nn.Module):
         return self.output_proj(attended)
 
 
-# Pre-Norm Transformer
+# 支持归一化位置和 FFN 类型消融的 Transformer Block。
 class TransformerBlock(nn.Module):
     def __init__(
         self,
@@ -362,12 +362,16 @@ class TransformerBlock(nn.Module):
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
         norm_mode: str = "pre",
+        ffn_type: str = "swiglu",
     ):
         super().__init__()
 
         if norm_mode not in {"pre", "post", "none"}:
             raise ValueError(f"不支持的 norm_mode：{norm_mode}")
+        if ffn_type not in {"swiglu", "silu"}:
+            raise ValueError(f"不支持的 ffn_type：{ffn_type}")
 
+        self.ffn_type = ffn_type
         self.norm_mode = norm_mode
 
         if norm_mode == "none":
@@ -382,7 +386,10 @@ class TransformerBlock(nn.Module):
             d_model=d_model, num_heads=num_heads, theta=theta, max_seq_len=max_seq_len, device=device, dtype=dtype
         )
 
-        self.ffn = SwiGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
+        if ffn_type == "swiglu":
+            self.ffn = SwiGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
+        else:
+            self.ffn = SiLUFFN(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None):
         if self.norm_mode == "pre":
@@ -412,6 +419,8 @@ class TransformerLM(nn.Module):
         rope_theta: float,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
+        norm_mode: str = "pre",
+        ffn_type: str = "swiglu",
     ):
         super().__init__()
 
@@ -429,12 +438,16 @@ class TransformerLM(nn.Module):
                     max_seq_len=context_length,
                     device=device,
                     dtype=dtype,
+                    norm_mode=norm_mode,
+                    ffn_type=ffn_type,
                 )
                 for _ in range(num_layers)
             ]
         )
-
-        self.ln_final = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        if norm_mode == "none":
+            self.ln_final = nn.Identity()
+        else:
+            self.ln_final = RMSNorm(d_model=d_model, device=device, dtype=dtype)
 
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype)
 
