@@ -92,6 +92,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--eval-seed", type=int, default=2026, help="验证 batch 的固定随机种子，所有消融实验应保持一致")
+    parser.add_argument("--wandb-mode", choices=("disabled", "offline", "online"), default="disabled")
+    parser.add_argument("--wandb-project", default="assignment1-ablations")
+    parser.add_argument("--wandb-group", default=None)
+    parser.add_argument("--wandb-run-name", default=None)
+    parser.add_argument("--wandb-dir", type=Path, default=Path("artifacts/wandb"))
 
     # 调试：始终训练同一个 batch
     parser.add_argument("--overfit-single-batch", action="store_true")
@@ -138,6 +143,72 @@ def write_log(log_path: Path, record: dict[str, Any]) -> None:
 
     with log_path.open("a", encoding="utf-8") as log_file:
         log_file.write(line + "\n")
+
+
+def build_wandb_config(
+    args: argparse.Namespace,
+    norm_mode: str,
+    ffn_type: str,
+    effective_d_ff: int,
+    num_parameters: int,
+    device: torch.device,
+) -> dict[str, Any]:
+    config = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
+
+    config.update(
+        {
+            "norm_mode": norm_mode,
+            "ffn_type": ffn_type,
+            "effective_d_ff": effective_d_ff,
+            "num_parameters": num_parameters,
+            "device": str(device),
+            "tokens_per_step": (args.batch_size * args.context_length),
+            "total_tokens": (args.max_iters * args.batch_size * args.context_length),
+        }
+    )
+
+    return config
+
+
+def init_wandb(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+) -> Any | None:
+    if args.wandb_mode == "disabled":
+        return None
+
+    # 延迟导入，关闭 W&B 时不增加普通训练的启动负担。
+    import wandb
+
+    args.wandb_dir.mkdir(parents=True, exist_ok=True)
+
+    run = wandb.init(
+        project=args.wandb_project,
+        group=args.wandb_group,
+        name=(args.wandb_run_name or f"{args.variant}-seed{args.seed}"),
+        job_type="train",
+        mode=args.wandb_mode,
+        dir=str(args.wandb_dir),
+        tags=[
+            "tinystories",
+            "ablation",
+            args.variant,
+        ],
+        config=config,
+    )
+
+    # 后续所有曲线统一使用已处理 token 数作为横轴。
+    run.define_metric("tokens_processed")
+    run.define_metric(
+        "train/*",
+        step_metric="tokens_processed",
+    )
+    run.define_metric(
+        "validation/*",
+        step_metric="tokens_processed",
+    )
+
+    return run
 
 
 @torch.no_grad()
@@ -261,6 +332,20 @@ def main() -> None:
     )
 
     num_parameters = sum(parameter.numel() for parameter in model.parameters())
+
+    wandb_config = build_wandb_config(
+        args=args,
+        norm_mode=norm_mode,
+        ffn_type=ffn_type,
+        effective_d_ff=effective_d_ff,
+        num_parameters=num_parameters,
+        device=device,
+    )
+
+    wandb_run = init_wandb(
+        args=args,
+        config=wandb_config,
+    )
 
     print(
         json.dumps(
@@ -413,6 +498,9 @@ def main() -> None:
                 iteration=completed_steps,
                 checkpoint_dir=args.checkpoint_dir,
             )
+
+    if wandb_run is not None:
+        wandb_run.finish()
 
 
 if __name__ == "__main__":

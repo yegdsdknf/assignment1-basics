@@ -9,7 +9,7 @@ from cs336_basics.model import TransformerLM
 
 from cs336_basics.bpe import count_pretokens_parallel
 from cs336_basics.plot_metrics import extract_points
-from cs336_basics.train import resolve_variant_config, evaluate, parse_args
+from cs336_basics.train import resolve_variant_config, evaluate, parse_args, build_wandb_config, init_wandb
 
 
 def test_all_package_modules_import_without_side_effect_errors() -> None:
@@ -141,3 +141,48 @@ def test_evaluate_is_repeatable_and_restores_numpy_state():
 
     assert first_loss == second_loss
     assert actual_next_random_value == expected_next_random_value
+
+
+def test_wandb_is_disabled_by_default():
+    args = parse_args(
+        [
+            "--train-data",
+            "train.bin",
+            "--validation-data",
+            "validation.bin",
+        ]
+    )
+
+    assert args.wandb_mode == "disabled"
+
+
+def test_build_wandb_config_serializes_paths():
+    args = parse_args(
+        [
+            "--train-data",
+            "train.bin",
+            "--validation-data",
+            "validation.bin",
+            "--variant",
+            "silu_matched",
+        ]
+    )
+
+    config = build_wandb_config(
+        args=args,
+        norm_mode="pre",
+        ffn_type="silu",
+        effective_d_ff=2016,
+        num_parameters=22_696_448,
+        device=torch.device("cpu"),
+    )
+
+    assert config["train_data"] == "train.bin"
+    assert config["validation_data"] == "validation.bin"
+    assert config["effective_d_ff"] == 2016
+    assert config["num_parameters"] == 22_696_448
+    assert config["tokens_per_step"] == 8192
+    assert config["total_tokens"] == 40_960_000
+
+    # disabled 模式不能创建 W&B run。
+    assert init_wandb(args, config) is None
