@@ -361,22 +361,42 @@ class TransformerBlock(nn.Module):
         max_seq_len: int,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
+        norm_mode: str = "pre",
     ):
         super().__init__()
 
-        self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        if norm_mode not in {"pre", "post", "none"}:
+            raise ValueError(f"不支持的 norm_mode：{norm_mode}")
+
+        self.norm_mode = norm_mode
+
+        if norm_mode == "none":
+            # Identity 不包含参数，确保 No-Norm 实验真正移除归一化层。
+            self.ln1 = nn.Identity()
+            self.ln2 = nn.Identity()
+        else:
+            self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+            self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
 
         self.attn = CausalMultiHeadSelfAttention(
             d_model=d_model, num_heads=num_heads, theta=theta, max_seq_len=max_seq_len, device=device, dtype=dtype
         )
 
-        self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
-
         self.ffn = SwiGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None):
-        x = x + self.attn(self.ln1(x), token_positions)
-        x = x + self.ffn(self.ln2(x))
+        if self.norm_mode == "pre":
+            x = x + self.attn(self.ln1(x), token_positions)
+            x = x + self.ffn(self.ln2(x))
+            return x
+
+        if self.norm_mode == "post":
+            x = self.ln1(x + self.attn(x, token_positions))
+            x = self.ln2(x + self.ffn(x))
+            return x
+
+        x = x + self.attn(x, token_positions)
+        x = x + self.ffn(x)
         return x
 
 
