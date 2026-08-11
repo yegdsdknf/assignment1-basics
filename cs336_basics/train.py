@@ -47,7 +47,7 @@ def resolve_variant_config(
     return norm_mode, ffn_type, effective_d_ff
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="训练 TinyStories Transformer LM")
 
     # 数据与输出路径
@@ -91,11 +91,12 @@ def parse_args() -> argparse.Namespace:
         help="auto、cpu、cuda 或 cuda:0",
     )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--eval-seed", type=int, default=2026, help="验证 batch 的固定随机种子，所有消融实验应保持一致")
 
     # 调试：始终训练同一个 batch
     parser.add_argument("--overfit-single-batch", action="store_true")
 
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def validate_args(args: argparse.Namespace) -> None:
@@ -273,6 +274,8 @@ def main() -> None:
                 "norm_mode": norm_mode,
                 "ffn_type": ffn_type,
                 "d_ff": effective_d_ff,
+                "seed": args.seed,
+                "eval_seed": args.eval_seed,
             },
             indent=2,
             ensure_ascii=False,
@@ -381,7 +384,7 @@ def main() -> None:
                 context_length=args.context_length,
                 eval_batches=args.eval_batches,
                 device=device,
-                seed=args.seed + 1,
+                seed=args.eval_seed,
             )
 
             perplexity = math.exp(validation_loss)

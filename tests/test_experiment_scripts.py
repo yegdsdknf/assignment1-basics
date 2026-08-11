@@ -2,10 +2,14 @@ import importlib
 import pkgutil
 import pytest
 import cs336_basics
+import numpy as np
+import torch
+
+from cs336_basics.model import TransformerLM
 
 from cs336_basics.bpe import count_pretokens_parallel
 from cs336_basics.plot_metrics import extract_points
-from cs336_basics.train import resolve_variant_config
+from cs336_basics.train import resolve_variant_config, evaluate, parse_args
 
 
 def test_all_package_modules_import_without_side_effect_errors() -> None:
@@ -72,3 +76,68 @@ def test_silu_variant_requires_even_base_d_ff():
 def test_resolve_variant_config_rejects_unknown_variant():
     with pytest.raises(ValueError, match="variant"):
         resolve_variant_config("unknown", 1344)
+
+
+def test_train_args_use_independent_evaluation_seed():
+    args = parse_args(
+        [
+            "--train-data",
+            "train.bin",
+            "--validation-data",
+            "validation.bin",
+            "--seed",
+            "44",
+        ]
+    )
+
+    assert args.seed == 44
+    assert args.eval_seed == 2026
+
+
+def test_evaluate_is_repeatable_and_restores_numpy_state():
+    torch.manual_seed(42)
+
+    model = TransformerLM(
+        vocab_size=32,
+        context_length=4,
+        d_model=8,
+        num_layers=1,
+        num_heads=2,
+        d_ff=16,
+        rope_theta=10_000.0,
+    )
+    validation_data = (
+        np.arange(
+            128,
+            dtype=np.uint16,
+        )
+        % 32
+    )
+
+    np.random.seed(1234)
+    expected_next_random_value = np.random.randint(0, 1_000_000)
+
+    np.random.seed(1234)
+    first_loss = evaluate(
+        model=model,
+        validation_data=validation_data,
+        batch_size=2,
+        context_length=4,
+        eval_batches=3,
+        device=torch.device("cpu"),
+        seed=2026,
+    )
+    actual_next_random_value = np.random.randint(0, 1_000_000)
+
+    second_loss = evaluate(
+        model=model,
+        validation_data=validation_data,
+        batch_size=2,
+        context_length=4,
+        eval_batches=3,
+        device=torch.device("cpu"),
+        seed=2026,
+    )
+
+    assert first_loss == second_loss
+    assert actual_next_random_value == expected_next_random_value
