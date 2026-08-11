@@ -1,10 +1,11 @@
 import importlib
 import pkgutil
-
+import pytest
 import cs336_basics
 
 from cs336_basics.bpe import count_pretokens_parallel
 from cs336_basics.plot_metrics import extract_points
+from cs336_basics.train import resolve_variant_config
 
 
 def test_all_package_modules_import_without_side_effect_errors() -> None:
@@ -48,3 +49,26 @@ def test_parallel_pretokenization_has_an_explicit_boundary_contract() -> None:
         assert "<|endoftext|>" in str(error)
     else:
         raise AssertionError("非 TinyStories 文档边界应被明确拒绝")
+
+
+@pytest.mark.parametrize(
+    ("variant", "expected"),
+    [
+        ("baseline", ("pre", "swiglu", 1344)),
+        ("no_norm", ("none", "swiglu", 1344)),
+        ("post_norm", ("post", "swiglu", 1344)),
+        ("silu_matched", ("pre", "silu", 2016)),
+    ],
+)
+def test_resolve_variant_config(variant, expected):
+    assert resolve_variant_config(variant, 1344) == expected
+
+
+def test_silu_variant_requires_even_base_d_ff():
+    with pytest.raises(ValueError, match="偶数"):
+        resolve_variant_config("silu_matched", 1343)
+
+
+def test_resolve_variant_config_rejects_unknown_variant():
+    with pytest.raises(ValueError, match="variant"):
+        resolve_variant_config("unknown", 1344)

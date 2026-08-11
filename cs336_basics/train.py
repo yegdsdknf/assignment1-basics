@@ -15,6 +15,37 @@ from cs336_basics.optimizer import AdamW, get_lr_cosine_schedule
 from cs336_basics.runtime import resolve_device, set_random_seed, synchronize_device
 from cs336_basics.serialization import save_checkpoint
 
+VARIANT_ARCHITECTURES: dict[str, tuple[str, str]] = {
+    "baseline": ("pre", "swiglu"),
+    "no_norm": ("none", "swiglu"),
+    "post_norm": ("post", "swiglu"),
+    "silu_matched": ("pre", "silu"),
+}
+
+
+def resolve_variant_config(
+    variant: str,
+    swiglu_d_ff: int,
+) -> tuple[str, str, int]:
+    if swiglu_d_ff <= 0:
+        raise ValueError("d_ff 必须为正数")
+
+    try:
+        norm_mode, ffn_type = VARIANT_ARCHITECTURES[variant]
+    except KeyError as error:
+        raise ValueError(f"不支持的 variant：{variant}") from error
+
+    effective_d_ff = swiglu_d_ff
+
+    if ffn_type == "silu":
+        if swiglu_d_ff % 2 != 0:
+            raise ValueError("参数量匹配的 SiLU FFN 要求基础 d_ff 为偶数")
+
+        # SwiGLU 有三个权重矩阵，SiLU FFN 只有两个。
+        effective_d_ff = 3 * swiglu_d_ff // 2
+
+    return norm_mode, ffn_type, effective_d_ff
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="训练 TinyStories Transformer LM")
@@ -31,8 +62,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--d-model", type=int, default=512)
     parser.add_argument("--num-layers", type=int, default=4)
     parser.add_argument("--num-heads", type=int, default=16)
-    parser.add_argument("--d-ff", type=int, default=1344)
+    parser.add_argument("--d-ff", type=int, default=1344, help="SwiGLU 的隐藏维度；silu_matched 自动使用其 3/2 倍")
     parser.add_argument("--rope-theta", type=float, default=10_000.0)
+    parser.add_argument("--variant", choices=tuple(VARIANT_ARCHITECTURES), default="baseline")
 
     # 训练超参数
     parser.add_argument("--batch-size", type=int, default=32)
@@ -187,6 +219,7 @@ def save_step_checkpoint(
 def main() -> None:
     args = parse_args()
     validate_args(args)
+    norm_mode, ffn_type, effective_d_ff = resolve_variant_config(variant=args.variant, swiglu_d_ff=args.d_ff)
 
     device = resolve_device(args.device)
     set_random_seed(args.seed)
@@ -210,10 +243,12 @@ def main() -> None:
         d_model=args.d_model,
         num_layers=args.num_layers,
         num_heads=args.num_heads,
-        d_ff=args.d_ff,
+        d_ff=effective_d_ff,
         rope_theta=args.rope_theta,
         device=device,
         dtype=torch.float32,
+        norm_mode=norm_mode,
+        ffn_type=ffn_type,
     )
 
     optimizer = AdamW(
@@ -234,6 +269,10 @@ def main() -> None:
                 "train_tokens": len(train_data),
                 "validation_tokens": len(validation_data),
                 "max_iters": args.max_iters,
+                "variant": args.variant,
+                "norm_mode": norm_mode,
+                "ffn_type": ffn_type,
+                "d_ff": effective_d_ff,
             },
             indent=2,
             ensure_ascii=False,
