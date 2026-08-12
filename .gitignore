@@ -175,3 +175,7 @@ artifacts/checkpoints/
 artifacts/*_checkpoints/
 artifacts/*_metrics.jsonl
 artifacts/**/*.pt
+
+# Local W&B runs and smoke-test outputs
+artifacts/wandb/
+artifacts/smoke/

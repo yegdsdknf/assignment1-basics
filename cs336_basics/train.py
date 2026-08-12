@@ -428,6 +428,7 @@ def main() -> None:
         optimizer.step()
 
         completed_steps = iteration + 1
+        processed_tokens = completed_steps * args.batch_size * args.context_length
 
         # detach 后只保存数值，不保留计算图。
         running_loss.add_(loss.detach())
@@ -441,20 +442,29 @@ def main() -> None:
 
             latest_train_loss = running_loss.item() / running_steps
 
-            processed_tokens = completed_steps * args.batch_size * args.context_length
+            train_record = {
+                "event": "train",
+                "step": completed_steps,
+                "elapsed_seconds": elapsed_seconds,
+                "tokens_processed": processed_tokens,
+                "session_tokens_per_second": (processed_tokens / elapsed_seconds),
+                "learning_rate": learning_rate,
+                "train_loss": latest_train_loss,
+            }
 
-            write_log(
-                args.log_file,
-                {
-                    "event": "train",
-                    "step": completed_steps,
-                    "elapsed_seconds": elapsed_seconds,
-                    "tokens_processed": processed_tokens,
-                    "session_tokens_per_second": processed_tokens / elapsed_seconds,
-                    "learning_rate": learning_rate,
-                    "train_loss": latest_train_loss,
-                },
-            )
+            write_log(args.log_file, train_record)
+
+            if wandb_run is not None:
+                wandb_run.log(
+                    {
+                        "tokens_processed": processed_tokens,
+                        "train/step": completed_steps,
+                        "train/loss": latest_train_loss,
+                        "train/learning_rate": learning_rate,
+                        "train/tokens_per_second": (processed_tokens / elapsed_seconds),
+                        "train/elapsed_seconds": elapsed_seconds,
+                    }
+                )
 
             running_loss.zero_()
             running_steps = 0
@@ -477,17 +487,28 @@ def main() -> None:
             synchronize_device(device)
             elapsed_seconds = time.perf_counter() - training_start_time
 
-            write_log(
-                args.log_file,
-                {
-                    "event": "validation",
-                    "step": completed_steps,
-                    "elapsed_seconds": elapsed_seconds,
-                    "train_loss": latest_train_loss,
-                    "validation_loss": validation_loss,
-                    "perplexity": perplexity,
-                },
-            )
+            validation_record = {
+                "event": "validation",
+                "step": completed_steps,
+                "elapsed_seconds": elapsed_seconds,
+                "tokens_processed": processed_tokens,
+                "train_loss": latest_train_loss,
+                "validation_loss": validation_loss,
+                "perplexity": perplexity,
+            }
+
+            write_log(args.log_file, validation_record)
+
+            if wandb_run is not None:
+                wandb_run.log(
+                    {
+                        "tokens_processed": processed_tokens,
+                        "validation/step": completed_steps,
+                        "validation/loss": validation_loss,
+                        "validation/perplexity": perplexity,
+                        "validation/elapsed_seconds": elapsed_seconds,
+                    }
+                )
 
         should_checkpoint = completed_steps % args.checkpoint_interval == 0 or completed_steps == args.max_iters
 
