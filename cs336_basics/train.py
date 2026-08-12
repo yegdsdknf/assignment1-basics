@@ -389,6 +389,11 @@ def main() -> None:
     )
     running_steps = 0
     latest_train_loss: float | None = None
+    best_validation_loss = math.inf
+    best_validation_perplexity = math.inf
+    best_validation_step: int | None = None
+    final_validation_loss: float | None = None
+    final_validation_perplexity: float | None = None
 
     synchronize_device(device)
     training_start_time = time.perf_counter()
@@ -483,6 +488,13 @@ def main() -> None:
             )
 
             perplexity = math.exp(validation_loss)
+            final_validation_loss = validation_loss
+            final_validation_perplexity = perplexity
+
+            if validation_loss < best_validation_loss:
+                best_validation_loss = validation_loss
+                best_validation_perplexity = perplexity
+                best_validation_step = completed_steps
 
             synchronize_device(device)
             elapsed_seconds = time.perf_counter() - training_start_time
@@ -520,7 +532,17 @@ def main() -> None:
                 checkpoint_dir=args.checkpoint_dir,
             )
 
+    if final_validation_loss is None or final_validation_perplexity is None or best_validation_step is None:
+        raise RuntimeError("训练结束时没有得到验证结果")
+
     if wandb_run is not None:
+        wandb_run.summary["result/final_validation_loss"] = final_validation_loss
+        wandb_run.summary["result/final_validation_perplexity"] = final_validation_perplexity
+        wandb_run.summary["result/best_validation_loss"] = best_validation_loss
+        wandb_run.summary["result/best_validation_perplexity"] = best_validation_perplexity
+        wandb_run.summary["result/best_validation_step"] = best_validation_step
+        wandb_run.summary["result/final_step"] = args.max_iters
+        wandb_run.summary["result/tokens_processed"] = args.max_iters * args.batch_size * args.context_length
         wandb_run.finish()
 
 
