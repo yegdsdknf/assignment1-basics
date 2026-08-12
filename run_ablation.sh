@@ -23,10 +23,12 @@ esac
 case "$stage" in
     screen)
         max_iters=1000
+        checkpoint_interval=1000
         wandb_group="screen-1k"
         ;;
     formal)
         max_iters=5000
+        checkpoint_interval=5000
         wandb_group="formal-5k"
         ;;
     *)
@@ -71,7 +73,7 @@ exec uv run python -m cs336_basics.train \
     --log-interval 10 \
     --eval-interval 100 \
     --eval-batches 20 \
-    --checkpoint-interval 500 \
+    --checkpoint-interval "$checkpoint_interval" \
     --device cuda \
     --seed "$seed" \
     --eval-seed 2026 \
