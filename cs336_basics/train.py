@@ -395,6 +395,9 @@ def main() -> None:
     final_validation_loss: float | None = None
     final_validation_perplexity: float | None = None
 
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+
     synchronize_device(device)
     training_start_time = time.perf_counter()
 
@@ -532,6 +535,10 @@ def main() -> None:
                 checkpoint_dir=args.checkpoint_dir,
             )
 
+    synchronize_device(device)
+    total_elapsed_seconds = time.perf_counter() - training_start_time
+    total_processed_tokens = args.max_iters * args.batch_size * args.context_length
+    end_to_end_tokens_per_second = total_processed_tokens / total_elapsed_seconds
     if final_validation_loss is None or final_validation_perplexity is None or best_validation_step is None:
         raise RuntimeError("训练结束时没有得到验证结果")
 
@@ -542,7 +549,12 @@ def main() -> None:
         wandb_run.summary["result/best_validation_perplexity"] = best_validation_perplexity
         wandb_run.summary["result/best_validation_step"] = best_validation_step
         wandb_run.summary["result/final_step"] = args.max_iters
-        wandb_run.summary["result/tokens_processed"] = args.max_iters * args.batch_size * args.context_length
+        wandb_run.summary["result/tokens_processed"] = total_processed_tokens
+        wandb_run.summary["system/total_elapsed_seconds"] = total_elapsed_seconds
+        wandb_run.summary["system/end_to_end_tokens_per_second"] = end_to_end_tokens_per_second
+
+        if device.type == "cuda":
+            wandb_run.summary["system/peak_gpu_memory_gib"] = torch.cuda.max_memory_allocated(device) / 1024**3
         wandb_run.finish()
 
 
